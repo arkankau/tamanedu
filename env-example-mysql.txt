@@ -1,0 +1,26 @@
+# MySQL Database Configuration
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=tamanedu
+
+# JWT Authentication
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+
+# OCR Configuration
+OCR_PROVIDER=tesseract
+
+# Google Vision API (Optional - for better OCR)
+GOOGLE_PROJECT_ID=your_google_project_id_here
+GOOGLE_CLIENT_EMAIL=your_google_client_email_here
+GOOGLE_PRIVATE_KEY=your_google_private_key_here
+
+# File Upload Configuration
+UPLOAD_DIR=./uploads
+MAX_FILE_SIZE=10485760
+ALLOWED_FILE_TYPES=image/jpeg,image/png,application/pdf,text/csv
+
+# Application Configuration
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+
