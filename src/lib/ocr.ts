@@ -22,14 +22,92 @@ export interface ExtractedAnswer {
 }
 
 /**
- * Extract text from image using Tesseract.js
+ * Extract text from image using EasyOCR (primary) with Tesseract.js fallback
  */
 export async function extractTextFromImage(
   imageFile: File | string,
   onProgress?: (progress: number) => void
 ): Promise<OCRResult[]> {
   try {
-    console.log('Starting OCR processing...')
+    console.log('Starting OCR processing with EasyOCR...')
+    
+    // Try EasyOCR first
+    try {
+      const easyOCRResults = await extractTextWithEasyOCR(imageFile)
+      if (easyOCRResults && easyOCRResults.length > 0) {
+        console.log(`EasyOCR extracted ${easyOCRResults.length} text elements`)
+        return easyOCRResults
+      }
+    } catch (easyOCRError) {
+      console.warn('EasyOCR failed, falling back to Tesseract.js:', easyOCRError)
+    }
+    
+    // Fallback to Tesseract.js
+    console.log('Falling back to Tesseract.js...')
+    return await extractTextWithTesseract(imageFile, onProgress)
+    
+  } catch (error) {
+    console.error('OCR Error:', error)
+    throw new Error(`Failed to extract text from image: ${error.message}`)
+  }
+}
+
+/**
+ * Extract text using EasyOCR via Python service
+ */
+async function extractTextWithEasyOCR(
+  imageFile: File | string
+): Promise<OCRResult[]> {
+  try {
+    // Convert File to FormData for API call
+    let formData: FormData
+    
+    if (imageFile instanceof File) {
+      formData = new FormData()
+      formData.append('file', imageFile)
+    } else {
+      // If it's a string path, we need to read it as a file
+      throw new Error('EasyOCR API requires File object, not file path')
+    }
+    
+    const response = await fetch('/api/ocr-easy', {
+      method: 'POST',
+      body: formData
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(`EasyOCR API error: ${errorData.error || response.statusText}`)
+    }
+    
+    const data = await response.json()
+    
+    if (!data.success || !data.results) {
+      throw new Error('EasyOCR API returned invalid response')
+    }
+    
+    // Convert EasyOCR results to our format
+    return data.results.map((result: any) => ({
+      text: result.text,
+      confidence: result.confidence,
+      bbox: result.bbox
+    }))
+    
+  } catch (error) {
+    console.error('EasyOCR extraction failed:', error)
+    throw error
+  }
+}
+
+/**
+ * Extract text using Tesseract.js (fallback method)
+ */
+async function extractTextWithTesseract(
+  imageFile: File | string,
+  onProgress?: (progress: number) => void
+): Promise<OCRResult[]> {
+  try {
+    console.log('Starting Tesseract.js OCR processing...')
     
     // Create worker without logger to avoid serialization issues
     const worker = await Tesseract.createWorker('eng')
@@ -85,11 +163,11 @@ export async function extractTextFromImage(
       }
     }
 
-    console.log(`OCR extracted ${results.length} words`)
+    console.log(`Tesseract.js extracted ${results.length} words`)
     return results
   } catch (error) {
-    console.error('OCR Error:', error)
-    throw new Error(`Failed to extract text from image: ${error.message}`)
+    console.error('Tesseract.js Error:', error)
+    throw error
   }
 }
 

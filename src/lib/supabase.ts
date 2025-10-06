@@ -263,17 +263,50 @@ export class DatabaseService {
       return result
     }
 
+    // Debug: log the raw database results
+    console.log('Raw database results for answer keys:', result.data)
+
     // Parse JSON accepted_variants with error handling
     const data = result.data.map((key: any) => {
       let acceptedVariants = []
       
-      if (key.accepted_variants) {
+      if (key.accepted_variants !== null && key.accepted_variants !== undefined) {
         try {
-          acceptedVariants = JSON.parse(key.accepted_variants)
+          // Debug: log the raw accepted_variants value
+          console.log(`Question ${key.question_number} - Raw accepted_variants:`, key.accepted_variants)
+          
+          // Handle different data types
+          if (typeof key.accepted_variants === 'string') {
+            // If it's a string, try to parse it
+            const trimmed = key.accepted_variants.trim()
+            if (trimmed === '' || trimmed === '[]' || trimmed === 'null') {
+              acceptedVariants = []
+            } else {
+              try {
+                acceptedVariants = JSON.parse(trimmed)
+                // Ensure it's an array
+                if (!Array.isArray(acceptedVariants)) {
+                  acceptedVariants = []
+                }
+              } catch (parseError) {
+                console.warn(`JSON parse failed for question ${key.question_number}, using empty array`)
+                acceptedVariants = []
+              }
+            }
+          } else if (Array.isArray(key.accepted_variants)) {
+            // If it's already an array, use it directly
+            acceptedVariants = key.accepted_variants
+          } else {
+            acceptedVariants = []
+          }
         } catch (error) {
-          console.warn(`Failed to parse accepted_variants for question ${key.question_number}:`, error)
+          console.error(`Failed to parse accepted_variants for question ${key.question_number}:`, error)
+          console.error(`Raw value was:`, key.accepted_variants)
           acceptedVariants = []
         }
+      } else {
+        console.log(`Question ${key.question_number} - No accepted_variants field`)
+        acceptedVariants = []
       }
       
       return {

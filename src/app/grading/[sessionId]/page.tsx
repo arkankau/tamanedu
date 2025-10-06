@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { supabaseAdmin } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/supabase'
 import Link from 'next/link'
 import { ArrowLeft, Download, RefreshCw, AlertTriangle, CheckCircle, X } from 'lucide-react'
 import { calculateGradeStats, getLetterGrade } from '@/lib/utils'
@@ -14,14 +14,53 @@ interface PageProps {
 }
 
 async function getGradingSession(sessionId: string, userId: string) {
-  // Use DatabaseService to get session with details
-  const result = await supabaseAdmin.getSessionWithDetails(sessionId, userId)
-  
-  if (result.error || !result.data) {
+  try {
+    // Get session details
+    const sessionResult = await DatabaseService.getGradingSession(sessionId, userId)
+    if (sessionResult.error || !sessionResult.data) {
+      console.error('Error fetching session:', sessionResult.error)
+      return null
+    }
+
+    // Get students with grades and responses
+    const studentsResult = await DatabaseService.getStudentsBySession(sessionId)
+    if (studentsResult.error) {
+      console.error('Error fetching students:', studentsResult.error)
+      return null
+    }
+
+    // Get answer keys
+    const answerKeysResult = await DatabaseService.getAnswerKeysBySession(sessionId)
+    if (answerKeysResult.error) {
+      console.error('Error fetching answer keys:', answerKeysResult.error)
+      return null
+    }
+
+    // Get grades and responses for each student
+    const studentsWithDetails = await Promise.all(
+      studentsResult.data.map(async (student) => {
+        const [gradesResult, responsesResult] = await Promise.all([
+          DatabaseService.getGradesByStudent(student.id),
+          DatabaseService.getResponsesByStudent(student.id)
+        ])
+
+        return {
+          ...student,
+          grades: gradesResult.error ? [] : gradesResult.data,
+          responses: responsesResult.error ? [] : responsesResult.data
+        }
+      })
+    )
+
+    return {
+      session: sessionResult.data,
+      students: studentsWithDetails,
+      answerKeys: answerKeysResult.data
+    }
+  } catch (error) {
+    console.error('Error in getGradingSession:', error)
     return null
   }
-
-  return result.data
 }
 
 export default async function GradingResultsPage({ params }: PageProps) {
