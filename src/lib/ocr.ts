@@ -29,21 +29,10 @@ export async function extractTextFromImage(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult[]> {
   try {
-    console.log('Starting OCR processing with EasyOCR...')
+    console.log('Starting OCR processing with improved Tesseract.js...')
     
-    // Try EasyOCR first
-    try {
-      const easyOCRResults = await extractTextWithEasyOCR(imageFile)
-      if (easyOCRResults && easyOCRResults.length > 0) {
-        console.log(`EasyOCR extracted ${easyOCRResults.length} text elements`)
-        return easyOCRResults
-      }
-    } catch (easyOCRError) {
-      console.warn('EasyOCR failed, falling back to Tesseract.js:', easyOCRError)
-    }
-    
-    // Fallback to Tesseract.js
-    console.log('Falling back to Tesseract.js...')
+    // Use improved Tesseract.js as primary method
+    // (EasyOCR temporarily disabled due to accuracy issues)
     return await extractTextWithTesseract(imageFile, onProgress)
     
   } catch (error) {
@@ -100,24 +89,29 @@ async function extractTextWithEasyOCR(
 }
 
 /**
- * Extract text using Tesseract.js (fallback method)
+ * Extract text using Tesseract.js with improved configuration
  */
 async function extractTextWithTesseract(
   imageFile: File | string,
   onProgress?: (progress: number) => void
 ): Promise<OCRResult[]> {
   try {
-    console.log('Starting Tesseract.js OCR processing...')
+    console.log('Starting Tesseract.js OCR processing with improved settings...')
     
-    // Create worker without logger to avoid serialization issues
+    // Create worker with optimized settings
     const worker = await Tesseract.createWorker('eng')
 
+    // Optimized parameters for better text recognition
     await worker.setParameters({
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,!?-+*/=()[]{}',
-      tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,!?-+*/=()[]{}:',
+      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // Better for structured text
+      tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY, // Use LSTM engine for better accuracy
+      preserve_interword_spaces: '1', // Preserve spaces between words
+      tessedit_create_hocr: '0', // Don't create HOCR output
+      tessedit_create_tsv: '0', // Don't create TSV output
     })
 
-    console.log('Worker configured, starting recognition...')
+    console.log('Worker configured with optimized settings, starting recognition...')
     
     // Convert File to buffer if needed for better compatibility
     let imageInput = imageFile
@@ -132,7 +126,7 @@ async function extractTextWithTesseract(
     console.log('OCR completed, processing results...')
     console.log('OCR data structure:', JSON.stringify(data, null, 2))
 
-    // Handle different OCR data structures
+    // Handle different OCR data structures with improved filtering
     let results: OCRResult[] = []
     
     if (data.words && Array.isArray(data.words)) {
@@ -140,8 +134,9 @@ async function extractTextWithTesseract(
       const words = data.words || []
       results = words
         .filter(word => word && word.text && word.text.trim().length > 0)
+        .filter(word => (word.confidence || 0) > 30) // Filter out very low confidence results
         .map(word => ({
-          text: word.text,
+          text: word.text.trim(),
           confidence: (word.confidence || 0) / 100, // Convert to 0-1 scale
           bbox: word.bbox ? {
             x0: word.bbox.x0,
@@ -163,7 +158,7 @@ async function extractTextWithTesseract(
       }
     }
 
-    console.log(`Tesseract.js extracted ${results.length} words`)
+    console.log(`Tesseract.js extracted ${results.length} words with improved settings`)
     return results
   } catch (error) {
     console.error('Tesseract.js Error:', error)
@@ -172,9 +167,7 @@ async function extractTextWithTesseract(
 }
 
 /**
- * Process OCR results to extract structured answers
- * This is a simplified version - in production, you'd want more sophisticated
- * answer detection based on worksheet layout
+ * Process OCR results to extract structured answers with improved logic
  */
 export function processOCRResults(
   ocrResults: OCRResult[],
@@ -182,44 +175,63 @@ export function processOCRResults(
 ): ExtractedAnswer[] {
   const answers: ExtractedAnswer[] = []
   
-  // Simple pattern matching for numbered questions
-  // This assumes answers follow patterns like "1. answer", "2) answer", etc.
-  const questionPattern = /^(\d+)[\.\)\:]?\s*(.+)$/
+  // Enhanced pattern matching for numbered questions
+  const questionPatterns = [
+    /^(\d+)[\.\)\:]\s*(.+)$/i,           // "1. Answer" or "1) Answer" or "1: Answer"
+    /^(\d+)\s+(.+)$/i,                   // "1 Answer"
+    /question\s*(\d+)[\.\)\:]\s*(.+)$/i, // "Question 1. Answer"
+    /q(\d+)[\.\)\:]\s*(.+)$/i,           // "Q1. Answer"
+  ]
   
   let currentQuestion = 0
+  let textBuffer = ''
   
+  // First, try to group text by lines and look for question patterns
   for (let i = 0; i < ocrResults.length; i++) {
     const result = ocrResults[i]
     const text = result.text.trim()
     
-    // Try to match question number pattern
-    const match = text.match(questionPattern)
-    if (match) {
-      const questionNum = parseInt(match[1])
-      const answerText = match[2].trim()
-      
-      if (questionNum > currentQuestion && answerText.length > 0) {
-        currentQuestion = questionNum
+    if (text.length === 0) continue
+    
+    textBuffer += text + ' '
+    
+    // Try to match question patterns
+    let matched = false
+    for (const pattern of questionPatterns) {
+      const match = textBuffer.match(pattern)
+      if (match) {
+        const questionNum = parseInt(match[1])
+        const answerText = match[2].trim()
         
-        answers.push({
-          questionNumber: questionNum,
-          rawAnswer: answerText,
-          normalizedAnswer: normalizeText(answerText),
-          confidence: result.confidence,
-          isFlagged: shouldFlagAnswer(result.confidence),
-          pageNumber
-        })
+        if (questionNum > currentQuestion && answerText.length > 0) {
+          currentQuestion = questionNum
+          
+          answers.push({
+            questionNumber: questionNum,
+            rawAnswer: answerText,
+            normalizedAnswer: normalizeText(answerText),
+            confidence: result.confidence,
+            isFlagged: shouldFlagAnswer(result.confidence),
+            pageNumber
+          })
+          
+          textBuffer = '' // Reset buffer
+          matched = true
+          break
+        }
       }
-    } else {
-      // If no question number found, try to group consecutive words as answers
-      // This is a fallback for when OCR doesn't capture question numbers well
-      const words = text.split(/\s+/).filter(word => word.length > 0)
+    }
+    
+    // If no match found and we have accumulated enough text, try to extract as answer
+    if (!matched && textBuffer.length > 10 && result.confidence > 0.4) {
+      // Look for potential standalone answers (single letters, short words)
+      const words = textBuffer.trim().split(/\s+/)
       
-      if (words.length > 0 && result.confidence > 0.3) {
-        // Look for potential answer patterns (letters, short phrases, numbers)
-        const potentialAnswer = words.join(' ')
+      if (words.length <= 3) { // Short answers
+        const potentialAnswer = words.join(' ').trim()
         
-        if (potentialAnswer.length <= 50 && /^[A-Za-z0-9\s\.\,\-\+\*\/\=\(\)]+$/.test(potentialAnswer)) {
+        // Check if it looks like an answer (letter, number, or short word)
+        if (/^[A-Za-z0-9]+$/.test(potentialAnswer) && potentialAnswer.length <= 10) {
           currentQuestion++
           
           answers.push({
@@ -230,11 +242,34 @@ export function processOCRResults(
             isFlagged: shouldFlagAnswer(result.confidence),
             pageNumber
           })
+          
+          textBuffer = '' // Reset buffer
         }
       }
     }
+    
+    // Clear buffer if it gets too long without matches
+    if (textBuffer.length > 100) {
+      textBuffer = ''
+    }
   }
   
+  // If we still have text in buffer, try to extract it as a final answer
+  if (textBuffer.trim().length > 0 && currentQuestion > 0) {
+    const words = textBuffer.trim().split(/\s+/)
+    if (words.length <= 3 && /^[A-Za-z0-9]+$/.test(words.join(''))) {
+      answers.push({
+        questionNumber: currentQuestion + 1,
+        rawAnswer: textBuffer.trim(),
+        normalizedAnswer: normalizeText(textBuffer.trim()),
+        confidence: 0.5, // Default confidence for buffer text
+        isFlagged: true, // Flag for manual review
+        pageNumber
+      })
+    }
+  }
+  
+  console.log(`Processed ${answers.length} answers from ${ocrResults.length} OCR results`)
   return answers
 }
 
