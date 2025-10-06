@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { extractText, processOCRResults } from '@/lib/ocr'
+import { extractTextFromImage, processOCRResults } from '@/lib/ocr'
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       
       try {
         // Extract text using OCR
-        const ocrResults = await extractText(file)
+        const ocrResults = await extractTextFromImage(file)
         
         // Process results to extract structured answers
         const extractedAnswers = processOCRResults(ocrResults, i + 1)
