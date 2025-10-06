@@ -12,12 +12,15 @@ export default function HomePage() {
     // Check if user is logged in by trying to access a protected route
     fetch('/api/auth/me')
       .then(response => {
+        // Only redirect if we get a successful response (200)
+        // Don't redirect on 401 (unauthorized) or 503 (database unavailable)
         if (response.ok) {
           router.push('/dashboard')
         }
       })
-      .catch(() => {
-        // User not logged in, stay on home page
+      .catch((error) => {
+        // User not logged in or database not available, stay on home page
+        console.log('Authentication check failed (this is normal if database is not set up)')
       })
   }, [])
 

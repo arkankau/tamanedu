@@ -29,40 +29,67 @@ export async function extractTextFromImage(
   onProgress?: (progress: number) => void
 ): Promise<OCRResult[]> {
   try {
-    const worker = await Tesseract.createWorker('eng', 1, {
-      logger: (m) => {
-        if (m.status === 'recognizing text' && onProgress) {
-          onProgress(m.progress * 100)
-        }
-      }
-    })
+    console.log('Starting OCR processing...')
+    
+    // Create worker without logger to avoid serialization issues
+    const worker = await Tesseract.createWorker('eng')
 
     await worker.setParameters({
       tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz .,!?-+*/=()[]{}',
       tessedit_pageseg_mode: Tesseract.PSM.AUTO,
     })
 
-    const { data } = await worker.recognize(imageFile)
+    console.log('Worker configured, starting recognition...')
+    
+    // Convert File to buffer if needed for better compatibility
+    let imageInput = imageFile
+    if (imageFile instanceof File) {
+      const arrayBuffer = await imageFile.arrayBuffer()
+      imageInput = Buffer.from(arrayBuffer)
+    }
+
+    const { data } = await worker.recognize(imageInput)
     await worker.terminate()
 
-    // Extract words with their confidence and bounding boxes
-    const results: OCRResult[] = data.words
-      .filter(word => word.text.trim().length > 0)
-      .map(word => ({
-        text: word.text,
-        confidence: word.confidence / 100, // Convert to 0-1 scale
-        bbox: word.bbox ? {
-          x0: word.bbox.x0,
-          y0: word.bbox.y0,
-          x1: word.bbox.x1,
-          y1: word.bbox.y1
-        } : undefined
-      }))
+    console.log('OCR completed, processing results...')
+    console.log('OCR data structure:', JSON.stringify(data, null, 2))
 
+    // Handle different OCR data structures
+    let results: OCRResult[] = []
+    
+    if (data.words && Array.isArray(data.words)) {
+      // Structure with words array
+      const words = data.words || []
+      results = words
+        .filter(word => word && word.text && word.text.trim().length > 0)
+        .map(word => ({
+          text: word.text,
+          confidence: (word.confidence || 0) / 100, // Convert to 0-1 scale
+          bbox: word.bbox ? {
+            x0: word.bbox.x0,
+            y0: word.bbox.y0,
+            x1: word.bbox.x1,
+            y1: word.bbox.y1
+          } : undefined
+        }))
+    } else if (data.text) {
+      // Structure with just text field - split into words
+      const text = data.text.trim()
+      if (text.length > 0) {
+        const words = text.split(/\s+/).filter(word => word.length > 0)
+        results = words.map(word => ({
+          text: word,
+          confidence: (data.confidence || 0) / 100,
+          bbox: undefined
+        }))
+      }
+    }
+
+    console.log(`OCR extracted ${results.length} words`)
     return results
   } catch (error) {
     console.error('OCR Error:', error)
-    throw new Error('Failed to extract text from image')
+    throw new Error(`Failed to extract text from image: ${error.message}`)
   }
 }
 

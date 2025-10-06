@@ -17,10 +17,11 @@ export async function middleware(request: NextRequest) {
     return Response.redirect(redirectUrl)
   }
 
-  // Redirect to dashboard if accessing auth pages while authenticated
-  if (request.nextUrl.pathname.startsWith('/auth') && token) {
-    return Response.redirect(new URL('/dashboard', request.url))
-  }
+  // For now, skip redirecting from auth pages to dashboard when database is not available
+  // This prevents redirect loops when MySQL is not installed
+  // if (request.nextUrl.pathname.startsWith('/auth') && token) {
+  //   return Response.redirect(new URL('/dashboard', request.url))
+  // }
 
   return NextResponse.next()
 }

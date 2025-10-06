@@ -89,8 +89,143 @@ export class DatabaseService {
     )
   }
 
+  static async createStudents(students: any[]) {
+    const results = []
+    for (const student of students) {
+      const studentId = generateId()
+      const result = await executeQuery(
+        `INSERT INTO students (id, session_id, name, student_id) 
+         VALUES (?, ?, ?, ?)`,
+        [
+          studentId,
+          student.session_id,
+          student.name,
+          student.student_id
+        ]
+      )
+      if (result.error) {
+        return { error: result.error }
+      }
+      // Get the created student
+      const createdStudent = await executeQuerySingle(
+        'SELECT * FROM students WHERE id = ?',
+        [studentId]
+      )
+      if (createdStudent.data) {
+        results.push(createdStudent.data)
+      }
+    }
+    return { data: results }
+  }
+
+  static async createResponses(responses: any[]) {
+    const results = []
+    for (const response of responses) {
+      const result = await executeQuery(
+        `INSERT INTO responses (id, student_id, question_number, raw_answer, normalized_answer, ocr_confidence, is_flagged, page_number) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          generateId(),
+          response.student_id,
+          response.question_number ?? 1,
+          response.raw_answer ?? response.answer_text ?? '[No text detected]',
+          response.normalized_answer ?? response.answer_text ?? '[No text detected]',
+          response.ocr_confidence ?? response.confidence_score ?? 0,
+          response.is_flagged ?? false,
+          response.page_number ?? null
+        ]
+      )
+      if (result.error) {
+        return { error: result.error }
+      }
+      results.push(result.data)
+    }
+    return { data: results }
+  }
+
   // Answer Keys
-  static async createAnswerKeys(sessionId: string, answerKeys: any[]) {
+  static async deleteAnswerKeysBySession(sessionId: string) {
+    return executeQuery(
+      'DELETE FROM answer_keys WHERE session_id = ?',
+      [sessionId]
+    )
+  }
+
+  static async createAnswerKeys(answerKeys: any[]) {
+    const results = []
+    for (const key of answerKeys) {
+      const result = await executeQuery(
+        `INSERT INTO answer_keys (id, session_id, question_number, correct_answer, accepted_variants, points)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          generateId(),
+          key.session_id,
+          key.question_number,
+          key.correct_answer,
+          JSON.stringify(key.accepted_variants || []),
+          key.points || 1
+        ]
+      )
+      if (result.error) {
+        return { error: result.error }
+      }
+    }
+    return { data: results }
+  }
+
+  // Grading methods
+  static async getStudentsBySession(sessionId: string) {
+    return executeQuery(
+      'SELECT id, name FROM students WHERE session_id = ? ORDER BY name',
+      [sessionId]
+    )
+  }
+
+  static async getAnswerKeysBySession(sessionId: string) {
+    return executeQuery(
+      'SELECT question_number, correct_answer, accepted_variants, points FROM answer_keys WHERE session_id = ? ORDER BY question_number',
+      [sessionId]
+    )
+  }
+
+  static async getResponsesByStudent(studentId: string) {
+    return executeQuery(
+      'SELECT question_number, normalized_answer FROM responses WHERE student_id = ? ORDER BY question_number',
+      [studentId]
+    )
+  }
+
+  static async deleteGradesByStudent(studentId: string) {
+    return executeQuery(
+      'DELETE FROM grades WHERE student_id = ?',
+      [studentId]
+    )
+  }
+
+  static async createGrades(grades: any[]) {
+    const results = []
+    for (const grade of grades) {
+      const result = await executeQuery(
+        `INSERT INTO grades (id, student_id, question_number, is_correct, points_earned, points_possible)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          generateId(),
+          grade.student_id,
+          grade.question_number,
+          grade.is_correct,
+          grade.points_earned,
+          grade.points_possible
+        ]
+      )
+      if (result.error) {
+        return { error: result.error }
+      }
+      results.push(result.data)
+    }
+    return { data: results }
+  }
+
+  static async createAnswerKeysWithSession(sessionId: string, answerKeys: any[]) {
     return executeTransaction(async (connection) => {
       // Delete existing answer keys
       await connection.execute(
@@ -128,11 +263,24 @@ export class DatabaseService {
       return result
     }
 
-    // Parse JSON accepted_variants
-    const data = result.data.map((key: any) => ({
-      ...key,
-      accepted_variants: JSON.parse(key.accepted_variants || '[]')
-    }))
+    // Parse JSON accepted_variants with error handling
+    const data = result.data.map((key: any) => {
+      let acceptedVariants = []
+      
+      if (key.accepted_variants) {
+        try {
+          acceptedVariants = JSON.parse(key.accepted_variants)
+        } catch (error) {
+          console.warn(`Failed to parse accepted_variants for question ${key.question_number}:`, error)
+          acceptedVariants = []
+        }
+      }
+      
+      return {
+        ...key,
+        accepted_variants: acceptedVariants
+      }
+    })
 
     return { data, error: null }
   }

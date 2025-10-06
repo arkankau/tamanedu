@@ -11,7 +11,14 @@ export async function getUser(): Promise<User | null> {
       return null
     }
     
-    const { user } = await AuthService.verifyToken(token)
+    const { user, error } = await AuthService.verifyToken(token)
+    
+    // Handle database unavailability gracefully
+    if (error === 'Database not available') {
+      console.warn('⚠️  Database not available - authentication skipped')
+      return null
+    }
+    
     return user
     
   } catch (error) {

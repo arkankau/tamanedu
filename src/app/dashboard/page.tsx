@@ -6,14 +6,19 @@ import { Plus, FileText, Clock, CheckCircle, Users, BookOpen } from 'lucide-reac
 import { SignOutButton } from '@/components/SignOutButton'
 
 async function getGradingSessions(userId: string) {
-  const { data: sessions, error } = await DatabaseService.getGradingSessionsByTeacher(userId)
+  try {
+    const { data: sessions, error } = await DatabaseService.getGradingSessionsByTeacher(userId)
 
-  if (error) {
-    console.error('Error fetching grading sessions:', error)
+    if (error) {
+      console.warn('Error fetching grading sessions (database may not be available):', error)
+      return []
+    }
+
+    return sessions || []
+  } catch (error) {
+    console.warn('Could not connect to database:', error)
     return []
   }
-
-  return sessions || []
 }
 
 export default async function DashboardPage() {
@@ -23,7 +28,13 @@ export default async function DashboardPage() {
     redirect('/auth/login')
   }
 
-  const sessions = await getGradingSessions(user.id)
+  let sessions = []
+  try {
+    sessions = await getGradingSessions(user.id)
+  } catch (error) {
+    console.warn('Could not fetch grading sessions (database may not be available):', error)
+    sessions = []
+  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {

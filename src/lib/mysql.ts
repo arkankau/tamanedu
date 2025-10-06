@@ -46,11 +46,28 @@ export async function executeQuery<T = any>(
     return { error: 'Database operations only available on server-side' }
   }
   
+  // Check database connection first
+  try {
+    const connection = await pool.getConnection()
+    await connection.ping()
+    connection.release()
+  } catch (error: any) {
+    console.warn('⚠️  MySQL is not available. Please install and start MySQL for full functionality.')
+    return { error: 'Database not available' }
+  }
+  
   try {
     const [rows] = await pool.execute(query, params)
     return { data: rows as T[] }
   } catch (error: any) {
     console.error('Database query error:', error)
+    
+    // Check if it's a connection error
+    if (error.code === 'ECONNREFUSED' || error.code === 'ER_ACCESS_DENIED_ERROR') {
+      console.warn('⚠️  MySQL is not available. Please install and start MySQL for full functionality.')
+      return { error: 'Database not available' }
+    }
+    
     return { error: error.message }
   }
 }
@@ -65,12 +82,29 @@ export async function executeQuerySingle<T = any>(
     return { error: 'Database operations only available on server-side' }
   }
   
+  // Check database connection first
+  try {
+    const connection = await pool.getConnection()
+    await connection.ping()
+    connection.release()
+  } catch (error: any) {
+    console.warn('⚠️  MySQL is not available. Please install and start MySQL for full functionality.')
+    return { error: 'Database not available' }
+  }
+  
   try {
     const [rows] = await pool.execute(query, params)
     const rowsArray = rows as T[]
     return { data: rowsArray.length > 0 ? rowsArray[0] : null }
   } catch (error: any) {
     console.error('Database query error:', error)
+    
+    // Check if it's a connection error
+    if (error.code === 'ECONNREFUSED' || error.code === 'ER_ACCESS_DENIED_ERROR') {
+      console.warn('⚠️  MySQL is not available. Please install and start MySQL for full functionality.')
+      return { error: 'Database not available' }
+    }
+    
     return { error: error.message }
   }
 }

@@ -136,6 +136,12 @@ export class AuthService {
         [decoded.userId]
       )
 
+      // Handle database connection issues gracefully
+      if (userResult.error === 'Database not available') {
+        console.warn('⚠️  Database not available, skipping user verification')
+        return { user: null, error: 'Database not available' }
+      }
+
       if (userResult.error || !userResult.data) {
         return { user: null, error: 'User not found' }
       }
@@ -248,4 +254,12 @@ export async function requireAuth(request: NextRequest): Promise<{ user: User | 
 
   return { user }
 }
+
+
+
+
+
+
+
+
 

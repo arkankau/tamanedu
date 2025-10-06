@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
 import { 
   Upload, 
   FileText, 
@@ -189,15 +188,22 @@ export default function NewGradingSessionPage() {
         student_id: null
       }))
 
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .insert(studentsToCreate)
-        .select()
+      // Call API to create students instead of direct database call
+      const studentsResponse = await fetch('/api/students/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ students: studentsToCreate }),
+      })
 
-      if (studentsError) {
-        console.error('Error creating students:', studentsError)
+      if (!studentsResponse.ok) {
+        console.error('Error creating students:', await studentsResponse.text())
         return
       }
+
+      const studentsResult = await studentsResponse.json()
+      const students = studentsResult.data || []
 
       // Create responses for each student
       const responsesToCreate = []
@@ -206,28 +212,49 @@ export default function NewGradingSessionPage() {
         const result = results[i]
         const student = students[i]
         
-        if (result.answers) {
+        if (!student) {
+          console.warn(`No student found for index ${i}`)
+          continue
+        }
+        
+        if (result.answers && result.answers.length > 0) {
           for (const answer of result.answers) {
             responsesToCreate.push({
               student_id: student.id,
-              question_number: answer.questionNumber,
-              raw_answer: answer.rawAnswer,
-              normalized_answer: answer.normalizedAnswer,
-              ocr_confidence: answer.confidence,
-              is_flagged: answer.isFlagged,
-              page_number: result.pageNumber
+              question_number: answer.questionNumber || 1,
+              raw_answer: answer.text || '[No text detected]',
+              normalized_answer: answer.text || '[No text detected]',
+              ocr_confidence: answer.confidence || 0,
+              is_flagged: false,
+              page_number: null
             })
           }
+        } else {
+          // If no answers array, create a response for the whole text
+          const text = result.text || '[No text detected]'
+          responsesToCreate.push({
+            student_id: student.id,
+            question_number: 1, // Default to question 1
+            raw_answer: text,
+            normalized_answer: text,
+            ocr_confidence: result.confidence || 0,
+            is_flagged: false,
+            page_number: null
+          })
         }
       }
 
       if (responsesToCreate.length > 0) {
-        const { error: responsesError } = await supabase
-          .from('responses')
-          .insert(responsesToCreate)
+        const responsesResponse = await fetch('/api/responses/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ responses: responsesToCreate }),
+        })
 
-        if (responsesError) {
-          console.error('Error creating responses:', responsesError)
+        if (!responsesResponse.ok) {
+          console.error('Error creating responses:', await responsesResponse.text())
         }
       }
       

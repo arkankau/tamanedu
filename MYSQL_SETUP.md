@@ -301,3 +301,11 @@ Once MySQL is working:
 
 Your TamanEdu application is now running on MySQL! 🎉
 
+
+
+
+
+
+
+
+

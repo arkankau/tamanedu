@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/supabase'
 import { parseAcceptedVariants } from '@/lib/utils'
 import Papa from 'papaparse'
 
@@ -106,13 +106,10 @@ export async function POST(request: NextRequest) {
     }
     
     // Delete existing answer keys for this session
-    const { error: deleteError } = await supabaseAdmin
-      .from('answer_keys')
-      .delete()
-      .eq('session_id', sessionId)
+    const deleteResult = await DatabaseService.deleteAnswerKeysBySession(sessionId)
     
-    if (deleteError) {
-      console.error('Error deleting existing answer keys:', deleteError)
+    if (deleteResult.error) {
+      console.error('Error deleting existing answer keys:', deleteResult.error)
       return NextResponse.json(
         { error: 'Failed to update answer keys' },
         { status: 500 }
@@ -120,13 +117,10 @@ export async function POST(request: NextRequest) {
     }
     
     // Insert new answer keys
-    const { data: insertedKeys, error: insertError } = await supabaseAdmin
-      .from('answer_keys')
-      .insert(answerKeys)
-      .select()
+    const insertResult = await DatabaseService.createAnswerKeys(answerKeys)
     
-    if (insertError) {
-      console.error('Error inserting answer keys:', insertError)
+    if (insertResult.error) {
+      console.error('Error inserting answer keys:', insertResult.error)
       return NextResponse.json(
         { error: 'Failed to save answer keys' },
         { status: 500 }
@@ -135,8 +129,8 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({
       success: true,
-      answerKeys: insertedKeys,
-      count: insertedKeys?.length || 0
+      answerKeys: insertResult.data,
+      count: insertResult.data?.length || 0
     })
     
   } catch (error) {

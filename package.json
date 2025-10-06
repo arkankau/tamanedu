@@ -4,10 +4,14 @@
   "description": "Auto-grading tool for teachers to scan and grade student worksheets using OCR technology",
   "private": true,
   "scripts": {
+    "predev": "node scripts/start-mysql.js",
     "dev": "next dev",
+    "prestart": "node scripts/start-mysql.js",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "mysql:start": "node scripts/start-mysql.js",
+    "mysql:start-sh": "./scripts/start-mysql.sh"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",

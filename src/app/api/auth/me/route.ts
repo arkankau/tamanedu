@@ -20,12 +20,29 @@ export async function GET(request: NextRequest) {
       }
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Auth me API error:', error)
+    
+    // Handle database connection issues gracefully
+    if (error.message && error.message.includes('Database not available')) {
+      return NextResponse.json(
+        { error: 'Database not available' },
+        { status: 503 }
+      )
+    }
+    
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
+
+
+
+
+
+
+
+
 
