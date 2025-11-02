@@ -35,7 +35,7 @@ interface OCRResult {
 }
 
 export default function NewGradingSessionPage() {
-  const [step, setStep] = useState(1) // 1: Upload, 2: OCR Results, 3: Answer Key, 4: Grade
+  const [step, setStep] = useState(1) // 1: Session & Answer Key, 2: Upload Worksheets, 3: Extract Answers, 4: Grade
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [files, setFiles] = useState<UploadedFile[]>([])
@@ -79,9 +79,14 @@ export default function NewGradingSessionPage() {
     })
   }
 
-  const handleCreateSession = async () => {
+  const handleCreateSessionAndAnswerKey = async () => {
     if (!title.trim()) {
       setError('Please enter a session title')
+      return
+    }
+
+    if (!answerKeyFile) {
+      setError('Please upload an answer key')
       return
     }
 
@@ -123,22 +128,40 @@ export default function NewGradingSessionPage() {
       }
 
       setSessionId(session.id)
-      setStep(2)
       
-      // Start OCR processing
-      await processOCR(session.id)
+      // Upload answer key
+      const formData = new FormData()
+      formData.append('file', answerKeyFile)
+      formData.append('sessionId', session.id)
+
+      const answerKeyResponse = await fetch('/api/answer-key/upload', {
+        method: 'POST',
+        body: formData
+      })
+
+      if (!answerKeyResponse.ok) {
+        const errorData = await answerKeyResponse.json()
+        throw new Error(errorData.error || 'Failed to upload answer key')
+      }
+
+      setStep(2)
       
     } catch (err) {
       console.error('Unexpected error:', err)
-      setError('An unexpected error occurred')
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
     } finally {
       setLoading(false)
     }
   }
 
-  const processOCR = async (sessionId: string) => {
+  const processWorksheets = async () => {
     if (files.length === 0) {
       setError('Please upload at least one file')
+      return
+    }
+
+    if (!sessionId) {
+      setError('Session not created')
       return
     }
 
@@ -150,6 +173,7 @@ export default function NewGradingSessionPage() {
       files.forEach(({ file }) => {
         formData.append('files', file)
       })
+      formData.append('sessionId', sessionId)
 
       const response = await fetch('/api/ocr', {
         method: 'POST',
@@ -158,20 +182,20 @@ export default function NewGradingSessionPage() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'OCR processing failed')
+        throw new Error(errorData.error || 'Answer extraction failed')
       }
 
       const data = await response.json()
       setOcrResults(data.results)
       
-      // Create students and responses from OCR results
+      // Create students and responses from extracted answers
       await createStudentsAndResponses(sessionId, data.results)
       
       setStep(3)
       
     } catch (err) {
-      console.error('OCR error:', err)
-      setError(err instanceof Error ? err.message : 'OCR processing failed')
+      console.error('Extraction error:', err)
+      setError(err instanceof Error ? err.message : 'Answer extraction failed')
     } finally {
       setLoading(false)
       setOcrProgress(0)
@@ -180,15 +204,14 @@ export default function NewGradingSessionPage() {
 
   const createStudentsAndResponses = async (sessionId: string, results: OCRResult[]) => {
     try {
-      // For now, create one student per page/file
-      // In a more advanced version, you'd allow teachers to assign pages to specific students
+      // Create one student per worksheet/file
       const studentsToCreate = results.map((result, index) => ({
         session_id: sessionId,
         name: `Student ${index + 1}`,
         student_id: null
       }))
 
-      // Call API to create students instead of direct database call
+      // Call API to create students
       const studentsResponse = await fetch('/api/students/create', {
         method: 'POST',
         headers: {
@@ -205,7 +228,7 @@ export default function NewGradingSessionPage() {
       const studentsResult = await studentsResponse.json()
       const students = studentsResult.data || []
 
-      // Create responses for each student
+      // Create responses for each student based on extracted answers
       const responsesToCreate = []
       
       for (let i = 0; i < results.length; i++) {
@@ -222,25 +245,13 @@ export default function NewGradingSessionPage() {
             responsesToCreate.push({
               student_id: student.id,
               question_number: answer.questionNumber || 1,
-              raw_answer: answer.text || '[No text detected]',
-              normalized_answer: answer.text || '[No text detected]',
+              raw_answer: answer.extractedAnswer || 'NO_ANSWER',
+              normalized_answer: answer.extractedAnswer || 'NO_ANSWER',
               ocr_confidence: answer.confidence || 0,
-              is_flagged: false,
-              page_number: null
+              is_flagged: answer.confidence < 0.7,
+              page_number: result.pageNumber
             })
           }
-        } else {
-          // If no answers array, create a response for the whole text
-          const text = result.text || '[No text detected]'
-          responsesToCreate.push({
-            student_id: student.id,
-            question_number: 1, // Default to question 1
-            raw_answer: text,
-            normalized_answer: text,
-            ocr_confidence: result.confidence || 0,
-            is_flagged: false,
-            page_number: null
-          })
         }
       }
 
@@ -263,9 +274,9 @@ export default function NewGradingSessionPage() {
     }
   }
 
-  const handleAnswerKeyUpload = async () => {
-    if (!answerKeyFile || !sessionId) {
-      setError('Please select an answer key file')
+  const handleContinueToGrading = async () => {
+    if (!sessionId) {
+      setError('Session not found')
       return
     }
 
@@ -273,28 +284,14 @@ export default function NewGradingSessionPage() {
     setError('')
 
     try {
-      const formData = new FormData()
-      formData.append('file', answerKeyFile)
-      formData.append('sessionId', sessionId)
-
-      const response = await fetch('/api/answer-key/upload', {
-        method: 'POST',
-        body: formData
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to upload answer key')
-      }
-
       setStep(4)
       
-      // Start grading
+      // Start LLM-based grading
       await startGrading()
       
     } catch (err) {
-      console.error('Answer key upload error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to upload answer key')
+      console.error('Grading error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to start grading')
     } finally {
       setLoading(false)
     }
@@ -359,15 +356,15 @@ export default function NewGradingSessionPage() {
         ))}
       </div>
       <div className="flex justify-center mt-2">
-        <div className="flex space-x-12 text-sm">
+        <div className="flex space-x-8 text-sm">
           <span className={step >= 1 ? 'text-indigo-600' : 'text-gray-500'}>
-            Upload
+            Answer Key
           </span>
           <span className={step >= 2 ? 'text-indigo-600' : 'text-gray-500'}>
-            OCR
+            Upload
           </span>
           <span className={step >= 3 ? 'text-indigo-600' : 'text-gray-500'}>
-            Answer Key
+            Extract
           </span>
           <span className={step >= 4 ? 'text-indigo-600' : 'text-gray-500'}>
             Grade
@@ -401,10 +398,10 @@ export default function NewGradingSessionPage() {
           </div>
         )}
 
-        {/* Step 1: Session Details & File Upload */}
+        {/* Step 1: Session Details & Answer Key */}
         {step === 1 && (
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-6">Session Details</h2>
+            <h2 className="text-lg font-medium text-gray-900 mb-6">Session Details & Answer Key</h2>
             
             <div className="space-y-4 mb-6">
               <div>
@@ -436,186 +433,7 @@ export default function NewGradingSessionPage() {
               </div>
             </div>
 
-            <h3 className="text-md font-medium text-gray-900 mb-4">Upload Worksheets</h3>
-            
-            {/* File Upload Area */}
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer"
-            >
-              <Upload className="mx-auto h-12 w-12 text-gray-400" />
-              <div className="mt-4">
-                <p className="text-sm text-gray-600">
-                  Click to upload or drag and drop
-                </p>
-                <p className="text-xs text-gray-500">
-                  JPG, PNG, or PDF files up to 10MB each
-                </p>
-              </div>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,.pdf"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-
-            {/* Uploaded Files */}
-            {files.length > 0 && (
-              <div className="mt-6">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">
-                  Uploaded Files ({files.length})
-                </h4>
-                <div className="space-y-2">
-                  {files.map((uploadedFile, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                    >
-                      <div className="flex items-center space-x-3">
-                        {uploadedFile.file.type.startsWith('image/') ? (
-                          <ImageIcon className="h-5 w-5 text-gray-400" />
-                        ) : (
-                          <FileText className="h-5 w-5 text-gray-400" />
-                        )}
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            {uploadedFile.file.name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {formatFileSize(uploadedFile.file.size)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {uploadedFile.preview && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              // Open preview in new tab
-                              window.open(uploadedFile.preview, '_blank')
-                            }}
-                            className="p-1 text-gray-400 hover:text-gray-600"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeFile(index)
-                          }}
-                          className="p-1 text-gray-400 hover:text-red-600"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={handleCreateSession}
-                disabled={loading || !title.trim() || files.length === 0}
-                className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                    Processing...
-                  </>
-                ) : (
-                  'Start OCR Processing'
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: OCR Results */}
-        {step === 2 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-6">OCR Results</h2>
-            
-            {loading ? (
-              <div className="text-center py-8">
-                <Loader2 className="animate-spin mx-auto h-8 w-8 text-indigo-600" />
-                <p className="mt-2 text-sm text-gray-600">Processing worksheets with OCR...</p>
-                {ocrProgress > 0 && (
-                  <div className="mt-4 max-w-xs mx-auto">
-                    <div className="bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${ocrProgress}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">{Math.round(ocrProgress)}% complete</p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {ocrResults.map((result, index) => (
-                  <div key={index} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-medium text-gray-900">{result.filename}</h3>
-                      <span className="text-sm text-gray-500">Page {result.pageNumber}</span>
-                    </div>
-                    
-                    {result.error ? (
-                      <div className="flex items-center text-red-600">
-                        <AlertTriangle className="h-4 w-4 mr-2" />
-                        <span className="text-sm">{result.error}</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Found {result.answers.length} answers
-                        </p>
-                        {result.answers.slice(0, 3).map((answer, answerIndex) => (
-                          <div key={answerIndex} className="text-sm">
-                            <span className="font-medium">Q{answer.questionNumber}:</span>{' '}
-                            <span className={answer.isFlagged ? 'text-yellow-600' : 'text-gray-900'}>
-                              {answer.rawAnswer}
-                            </span>
-                            {answer.isFlagged && (
-                              <span className="ml-2 text-xs text-yellow-600">(Low confidence)</span>
-                            )}
-                          </div>
-                        ))}
-                        {result.answers.length > 3 && (
-                          <p className="text-xs text-gray-500">
-                            ...and {result.answers.length - 3} more answers
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={() => setStep(3)}
-                    className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Continue to Answer Key
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Step 3: Answer Key Upload */}
-        {step === 3 && (
-          <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-6">Upload Answer Key</h2>
+            <h3 className="text-md font-medium text-gray-900 mb-4">Upload Answer Key *</h3>
             
             <div className="mb-6">
               <p className="text-sm text-gray-600 mb-4">
@@ -635,7 +453,8 @@ export default function NewGradingSessionPage() {
                 </p>
               </div>
             </div>
-
+            
+            {/* Answer Key Upload Area */}
             <div
               onClick={() => answerKeyInputRef.current?.click()}
               className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer"
@@ -680,16 +499,10 @@ export default function NewGradingSessionPage() {
               </div>
             )}
 
-            <div className="mt-6 flex justify-end space-x-3">
+            <div className="mt-6 flex justify-end">
               <button
-                onClick={() => setStep(2)}
-                className="px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleAnswerKeyUpload}
-                disabled={loading || !answerKeyFile}
+                onClick={handleCreateSessionAndAnswerKey}
+                disabled={loading || !title.trim() || !answerKeyFile}
                 className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
@@ -698,9 +511,184 @@ export default function NewGradingSessionPage() {
                     Processing...
                   </>
                 ) : (
-                  'Start Grading'
+                  'Continue to Worksheet Upload'
                 )}
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: Upload Worksheets */}
+        {step === 2 && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-6">Upload Student Worksheets</h2>
+            
+            <p className="text-sm text-gray-600 mb-6">
+              Upload images of student worksheets. The AI will automatically extract answers from each worksheet.
+            </p>
+            
+            {/* File Upload Area */}
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 cursor-pointer"
+            >
+              <Upload className="mx-auto h-12 w-12 text-gray-400" />
+              <div className="mt-4">
+                <p className="text-sm text-gray-600">
+                  Click to upload or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">
+                  JPG, PNG files up to 10MB each
+                </p>
+              </div>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+
+            {/* Uploaded Files */}
+            {files.length > 0 && (
+              <div className="mt-6">
+                <h4 className="text-sm font-medium text-gray-900 mb-3">
+                  Uploaded Files ({files.length})
+                </h4>
+                <div className="space-y-2">
+                  {files.map((uploadedFile, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <ImageIcon className="h-5 w-5 text-gray-400" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {uploadedFile.file.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {formatFileSize(uploadedFile.file.size)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {uploadedFile.preview && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              window.open(uploadedFile.preview, '_blank')
+                            }}
+                            className="p-1 text-gray-400 hover:text-gray-600"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFile(index)
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                onClick={() => setStep(1)}
+                className="px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Back
+              </button>
+              <button
+                onClick={processWorksheets}
+                disabled={loading || files.length === 0}
+                className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
+                    Extracting Answers...
+                  </>
+                ) : (
+                  'Extract Answers with AI'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Extraction Results */}
+        {step === 3 && (
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-6">Extracted Answers</h2>
+            
+            <div className="space-y-4">
+              {ocrResults.map((result, index) => (
+                <div key={index} className="border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-medium text-gray-900">{result.filename}</h3>
+                    <span className="text-sm text-gray-500">Worksheet {index + 1}</span>
+                  </div>
+                  
+                  {result.error ? (
+                    <div className="flex items-center text-red-600">
+                      <AlertTriangle className="h-4 w-4 mr-2" />
+                      <span className="text-sm">{result.error}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-600">
+                        Extracted {result.answers.length} answers
+                      </p>
+                      {result.answers.slice(0, 5).map((answer: any, answerIndex: number) => (
+                        <div key={answerIndex} className="text-sm flex items-center">
+                          <span className="font-medium mr-2">Q{answer.questionNumber}:</span>
+                          <span className="text-gray-900">
+                            {answer.extractedAnswer || 'NO_ANSWER'}
+                          </span>
+                          {answer.confidence < 0.7 && (
+                            <span className="ml-2 text-xs text-yellow-600 flex items-center">
+                              <AlertTriangle className="h-3 w-3 mr-1" />
+                              Low confidence
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                      {result.answers.length > 5 && (
+                        <p className="text-xs text-gray-500">
+                          ...and {result.answers.length - 5} more answers
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              
+              <div className="mt-6 flex justify-end space-x-3">
+                <button
+                  onClick={() => setStep(2)}
+                  className="px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleContinueToGrading}
+                  className="px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  Continue to Grading
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -710,9 +698,12 @@ export default function NewGradingSessionPage() {
           <div className="bg-white rounded-lg shadow p-6">
             <div className="text-center py-8">
               <Loader2 className="animate-spin mx-auto h-8 w-8 text-indigo-600" />
-              <h2 className="mt-4 text-lg font-medium text-gray-900">Grading in Progress</h2>
+              <h2 className="mt-4 text-lg font-medium text-gray-900">AI Grading in Progress</h2>
               <p className="mt-2 text-sm text-gray-600">
-                Matching student answers against the answer key...
+                Using AI to intelligently grade student responses against the answer key...
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                This may take a moment as the AI analyzes each answer
               </p>
             </div>
           </div>

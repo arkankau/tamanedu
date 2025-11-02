@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DatabaseService } from '@/lib/supabase'
-import { isAnswerCorrect } from '@/lib/utils'
+import { DatabaseService } from '@/lib/chromadb'
+import { gradeAnswer } from '@/lib/llm-grading'
 
+/**
+ * LLM-based grading endpoint
+ * Uses AI to intelligently grade student responses
+ */
 export async function POST(request: NextRequest) {
   try {
     const { sessionId } = await request.json()
@@ -59,7 +63,7 @@ export async function POST(request: NextRequest) {
     
     const gradingResults = []
     
-    // Grade each student
+    // Grade each student using LLM
     for (const student of students) {
       // Get student responses
       const responsesResult = await DatabaseService.getResponsesByStudent(student.id)
@@ -73,7 +77,7 @@ export async function POST(request: NextRequest) {
       
       const studentGrades = []
       
-      // Grade each response
+      // Grade each response using LLM
       for (const response of responses) {
         const answerKey = answerKeyMap.get(response.question_number)
         
@@ -82,12 +86,15 @@ export async function POST(request: NextRequest) {
           continue
         }
         
-        const isCorrect = isAnswerCorrect(
+        // Use LLM to grade the answer
+        const gradingResult = await gradeAnswer(
           response.normalized_answer,
           answerKey.correct_answer,
-          answerKey.accepted_variants || []
+          answerKey.accepted_variants || [],
+          response.question_number
         )
         
+        const isCorrect = gradingResult.isCorrect
         const pointsEarned = isCorrect ? answerKey.points : 0
         
         studentGrades.push({

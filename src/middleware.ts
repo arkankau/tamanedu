@@ -8,7 +8,7 @@ export async function middleware(request: NextRequest) {
   )
 
   // Check for auth token in cookies
-  const token = request.cookies.get('auth-token')?.value
+  const token = request.cookies.get('token')?.value
 
   // Redirect to login if accessing protected route without authentication
   if (isProtectedPath && !token) {

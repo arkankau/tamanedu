@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/auth-mysql'
+import { AuthService } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Set HTTP-only cookie with JWT token
-    response.cookies.set('auth-token', result.token!, {
+    response.cookies.set('token', result.token!, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

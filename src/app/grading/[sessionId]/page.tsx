@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { DatabaseService } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/chromadb'
 import Link from 'next/link'
 import { ArrowLeft, Download, RefreshCw, AlertTriangle, CheckCircle, X } from 'lucide-react'
 import { calculateGradeStats, getLetterGrade } from '@/lib/utils'

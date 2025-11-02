@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getUser } from '@/lib/auth'
-import { DatabaseService } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/chromadb'
 import Link from 'next/link'
 import { Plus, FileText, Clock, CheckCircle, Users, BookOpen } from 'lucide-react'
 import { SignOutButton } from '@/components/SignOutButton'

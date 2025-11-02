@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/chromadb'
 import { calculateGradeStats } from '@/lib/utils'
 import Papa from 'papaparse'
 
@@ -28,51 +28,37 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Get session details
-    const { data: session, error: sessionError } = await supabaseAdmin
-      .from('grading_sessions')
-      .select('title, description, created_at')
-      .eq('id', sessionId)
-      .single()
-    
-    if (sessionError || !session) {
-      return NextResponse.json(
-        { error: 'Session not found' },
-        { status: 404 }
-      )
+    // Get session details (stub for now since ChromaDB stores it differently)
+    const session = {
+      title: 'Grading Session',
+      description: '',
+      created_at: new Date().toISOString()
     }
     
     // Get students with their grades and responses
-    const { data: students, error: studentsError } = await supabaseAdmin
-      .from('students')
-      .select(`
-        id,
-        name,
-        student_id,
-        grades (
-          question_number,
-          is_correct,
-          points_earned,
-          points_possible
-        ),
-        responses (
-          question_number,
-          raw_answer,
-          normalized_answer,
-          ocr_confidence,
-          is_flagged
-        )
-      `)
-      .eq('session_id', sessionId)
-      .order('name')
+    const studentsResult = await DatabaseService.getStudentsBySession(sessionId)
     
-    if (studentsError) {
-      console.error('Error fetching students:', studentsError)
+    if (studentsResult.error || !studentsResult.data) {
       return NextResponse.json(
-        { error: 'Failed to fetch student data' },
+        { error: 'Failed to fetch students' },
         { status: 500 }
       )
     }
+    
+    const students = await Promise.all(
+      studentsResult.data.map(async (student: any) => {
+        const gradesResult = await DatabaseService.getGradesByStudent(student.id)
+        const responsesResult = await DatabaseService.getResponsesByStudent(student.id)
+        
+        return {
+          id: student.id,
+          name: student.name,
+          student_id: student.student_id,
+          grades: gradesResult.data || [],
+          responses: responsesResult.data || []
+        }
+      })
+    )
     
     if (!students || students.length === 0) {
       return NextResponse.json(
@@ -82,25 +68,23 @@ export async function POST(request: NextRequest) {
     }
     
     // Get answer keys for reference
-    const { data: answerKeys, error: answerKeysError } = await supabaseAdmin
-      .from('answer_keys')
-      .select('question_number, correct_answer, points')
-      .eq('session_id', sessionId)
-      .order('question_number')
+    const answerKeysResult = await DatabaseService.getAnswerKeysBySession(sessionId)
     
-    if (answerKeysError) {
-      console.error('Error fetching answer keys:', answerKeysError)
+    if (answerKeysResult.error) {
+      console.error('Error fetching answer keys:', answerKeysResult.error)
       return NextResponse.json(
         { error: 'Failed to fetch answer keys' },
         { status: 500 }
       )
     }
     
+    const answerKeys = answerKeysResult.data || []
+    
     if (format === 'csv') {
       if (type === 'individual') {
-        return generateIndividualCSV(session, students, answerKeys || [])
+        return generateIndividualCSV(session, students, answerKeys)
       } else {
-        return generateSummaryCSV(session, students, answerKeys || [])
+        return generateSummaryCSV(session, students, answerKeys)
       }
     } else {
       // PDF format - for now return JSON data that can be used to generate PDF on frontend
@@ -109,7 +93,7 @@ export async function POST(request: NextRequest) {
         data: {
           session,
           students,
-          answerKeys: answerKeys || [],
+          answerKeys,
           type
         }
       })
@@ -256,4 +240,3 @@ function generateSummaryCSV(session: any, students: any[], answerKeys: any[]) {
     }
   })
 }
-

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DatabaseService } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/chromadb'
 import { parseAcceptedVariants } from '@/lib/utils'
 import Papa from 'papaparse'
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { AlertTriangle, CheckCircle, X, Edit2, Save, XCircle } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+// ChromaDB operations are handled via API routes
 import { normalizeText, isAnswerCorrect } from '@/lib/utils'
 
 interface Student {

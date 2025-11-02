@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { DatabaseService } from '@/lib/supabase'
+import { DatabaseService } from '@/lib/chromadb'
 
 export async function POST(request: NextRequest) {
   try {

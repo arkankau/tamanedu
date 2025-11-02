@@ -1,10 +1,12 @@
 import type { NextConfig } from "next";
+import path from 'path'
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['mysql2', 'bcryptjs', 'jsonwebtoken', 'tesseract.js'],
+  // Ensure Next.js uses the project root (not parent folder lockfiles)
+  outputFileTracingRoot: path.join(__dirname),
+  serverExternalPackages: ['bcryptjs', 'jsonwebtoken'],
   webpack: (config: any) => {
     config.externals.push({
-      'mysql2': 'commonjs mysql2',
       'bcryptjs': 'commonjs bcryptjs',
       'jsonwebtoken': 'commonjs jsonwebtoken'
     })

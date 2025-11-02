@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { extractTextFromImage, processOCRResults } from '@/lib/ocr'
+import { extractAnswersFromImage } from '@/lib/llm-grading'
+import { DatabaseService } from '@/lib/chromadb'
 
+/**
+ * LLM-based answer extraction endpoint
+ * Replaces OCR with intelligent vision analysis
+ */
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const files = formData.getAll('files') as File[]
+    const sessionId = formData.get('sessionId') as string
     
     if (!files || files.length === 0) {
       return NextResponse.json(
@@ -12,6 +18,25 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+    
+    if (!sessionId) {
+      return NextResponse.json(
+        { error: 'Session ID is required' },
+        { status: 400 }
+      )
+    }
+    
+    // Get answer key for this session to know which questions to extract
+    const answerKeysResult = await DatabaseService.getAnswerKeysBySession(sessionId)
+    
+    if (answerKeysResult.error || !answerKeysResult.data || answerKeysResult.data.length === 0) {
+      return NextResponse.json(
+        { error: 'Answer key not found. Please upload answer key first.' },
+        { status: 404 }
+      )
+    }
+    
+    const questionNumbers = answerKeysResult.data.map(ak => ak.question_number)
     
     const results = []
     
@@ -27,17 +52,17 @@ export async function POST(request: NextRequest) {
       }
       
       try {
-        // Extract text using OCR
-        const ocrResults = await extractTextFromImage(file)
-        
-        // Process results to extract structured answers
-        const extractedAnswers = processOCRResults(ocrResults, i + 1)
+        // Extract answers using LLM vision
+        const extractedAnswers = await extractAnswersFromImage(file, questionNumbers)
         
         results.push({
           filename: file.name,
           pageNumber: i + 1,
-          answers: extractedAnswers,
-          rawOCR: ocrResults
+          answers: extractedAnswers.map(answer => ({
+            questionNumber: answer.questionNumber,
+            extractedAnswer: answer.extractedAnswer,
+            confidence: answer.confidence,
+          }))
         })
         
       } catch (error) {
@@ -46,8 +71,7 @@ export async function POST(request: NextRequest) {
           filename: file.name,
           pageNumber: i + 1,
           error: `Failed to process ${file.name}`,
-          answers: [],
-          rawOCR: []
+          answers: []
         })
       }
     }
@@ -58,7 +82,7 @@ export async function POST(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('OCR API Error:', error)
+    console.error('LLM Extraction API Error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

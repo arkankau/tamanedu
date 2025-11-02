@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/auth-mysql'
-import { DatabaseService } from '@/lib/supabase'
+import { AuthService } from '@/lib/auth'
+import { DatabaseService } from '@/lib/chromadb'
 
 export async function POST(request: NextRequest) {
   try {

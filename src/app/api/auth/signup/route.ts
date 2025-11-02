@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '@/lib/auth-mysql'
+import { AuthService } from '@/lib/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json()
+    const { email, password, name } = await request.json()
 
     if (!email || !password) {
       return NextResponse.json(
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await AuthService.signUp(email, password)
+    const result = await AuthService.signUp(email, password, name)
 
     if (result.error) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Set HTTP-only cookie with JWT token
-    response.cookies.set('auth-token', result.token!, {
+    response.cookies.set('token', result.token!, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
