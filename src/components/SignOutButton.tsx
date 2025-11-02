@@ -35,14 +35,14 @@ export function SignOutButton() {
     <button
       onClick={handleSignOut}
       disabled={loading}
-      className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="inline-flex items-center gap-2 px-4 py-2.5 border-2 border-gray-200 text-gray-700 bg-white rounded-xl font-medium hover:border-pink-200 hover:bg-pink-50 hover:text-[#8E165E] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {loading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loader2 className="h-5 w-5 animate-spin" />
       ) : (
-        <LogOut className="h-4 w-4" />
+        <LogOut className="h-5 w-5" />
       )}
-      <span className="ml-2">Sign Out</span>
+      <span>Sign Out</span>
     </button>
   )
 }
