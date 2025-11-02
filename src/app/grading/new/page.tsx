@@ -21,15 +21,13 @@ interface UploadedFile {
   preview?: string
 }
 
-interface OCRResult {
+interface ExtractionResult {
   filename: string
   pageNumber: number
   answers: Array<{
     questionNumber: number
-    rawAnswer: string
-    normalizedAnswer: string
+    extractedAnswer: string
     confidence: number
-    isFlagged: boolean
   }>
   error?: string
 }
@@ -39,12 +37,12 @@ export default function NewGradingSessionPage() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [files, setFiles] = useState<UploadedFile[]>([])
-  const [ocrResults, setOcrResults] = useState<OCRResult[]>([])
+  const [extractionResults, setExtractionResults] = useState<ExtractionResult[]>([])
   const [answerKeyFile, setAnswerKeyFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [ocrProgress, setOcrProgress] = useState(0)
+  const [extractionProgress, setExtractionProgress] = useState(0)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const answerKeyInputRef = useRef<HTMLInputElement>(null)
@@ -166,7 +164,7 @@ export default function NewGradingSessionPage() {
     }
 
     setLoading(true)
-    setOcrProgress(0)
+    setExtractionProgress(0)
 
     try {
       const formData = new FormData()
@@ -175,7 +173,7 @@ export default function NewGradingSessionPage() {
       })
       formData.append('sessionId', sessionId)
 
-      const response = await fetch('/api/ocr', {
+      const response = await fetch('/api/extract', {
         method: 'POST',
         body: formData
       })
@@ -186,7 +184,7 @@ export default function NewGradingSessionPage() {
       }
 
       const data = await response.json()
-      setOcrResults(data.results)
+      setExtractionResults(data.results)
       
       // Create students and responses from extracted answers
       await createStudentsAndResponses(sessionId, data.results)
@@ -198,11 +196,11 @@ export default function NewGradingSessionPage() {
       setError(err instanceof Error ? err.message : 'Answer extraction failed')
     } finally {
       setLoading(false)
-      setOcrProgress(0)
+      setExtractionProgress(0)
     }
   }
 
-  const createStudentsAndResponses = async (sessionId: string, results: OCRResult[]) => {
+  const createStudentsAndResponses = async (sessionId: string, results: ExtractionResult[]) => {
     try {
       // Create one student per worksheet/file
       const studentsToCreate = results.map((result, index) => ({
@@ -634,7 +632,7 @@ export default function NewGradingSessionPage() {
             <h2 className="text-lg font-medium text-gray-900 mb-6">Extracted Answers</h2>
             
             <div className="space-y-4">
-              {ocrResults.map((result, index) => (
+              {extractionResults.map((result, index) => (
                 <div key={index} className="border rounded-lg p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-medium text-gray-900">{result.filename}</h3>

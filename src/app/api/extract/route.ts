@@ -3,8 +3,7 @@ import { extractAnswersFromImage } from '@/lib/llm-grading'
 import { DatabaseService } from '@/lib/chromadb'
 
 /**
- * LLM-based answer extraction endpoint
- * Replaces OCR with intelligent vision analysis
+ * AI-based answer extraction endpoint using Reka Vision
  */
 export async function POST(request: NextRequest) {
   try {
@@ -52,7 +51,7 @@ export async function POST(request: NextRequest) {
       }
       
       try {
-        // Extract answers using LLM vision
+        // Extract answers using Reka AI vision
         const extractedAnswers = await extractAnswersFromImage(file, questionNumbers)
         
         results.push({
@@ -82,7 +81,7 @@ export async function POST(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('LLM Extraction API Error:', error)
+    console.error('AI Extraction API Error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

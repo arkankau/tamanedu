@@ -195,7 +195,69 @@ Be precise and extract the exact text/answer the student provided.`;
 }
 
 /**
- * Grade a single answer using LLM
+ * Check if an answer is a multiple choice answer (single letter A-Z)
+ */
+function isMCQAnswer(answer: string): boolean {
+  const trimmed = answer.trim().toUpperCase();
+  return /^[A-Z]$/.test(trimmed);
+}
+
+/**
+ * Calculate similarity between two strings (0-1)
+ * Simple implementation without external dependencies
+ */
+function calculateSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  
+  // Exact match
+  if (s1 === s2) return 1.0;
+  
+  // Calculate Levenshtein distance-based similarity
+  const longer = s1.length > s2.length ? s1 : s2;
+  const shorter = s1.length > s2.length ? s2 : s1;
+  
+  if (longer.length === 0) return 1.0;
+  
+  const editDistance = levenshteinDistance(longer, shorter);
+  return (longer.length - editDistance) / longer.length;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+function levenshteinDistance(str1: string, str2: string): number {
+  const matrix: number[][] = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
+/**
+ * Grade a single answer with intelligent logic:
+ * - MCQ: Simple string matching
+ * - Short answer/Essay: Vector similarity (string similarity as fallback)
  */
 export async function gradeAnswer(
   studentAnswer: string,
@@ -204,43 +266,71 @@ export async function gradeAnswer(
   questionNumber: number
 ): Promise<{ isCorrect: boolean; confidence: number; explanation: string }> {
   try {
-    const allAcceptedAnswers = [correctAnswer, ...acceptedVariants].join(', ');
+    const normalizedStudent = studentAnswer.trim();
+    const normalizedCorrect = correctAnswer.trim();
     
-    const prompt = `You are an expert teacher grading student answers.
-
-Question ${questionNumber}:
-Correct answer(s): ${allAcceptedAnswers}
-Student's answer: "${studentAnswer}"
-
-Determine if the student's answer is correct. Consider:
-- Exact matches
-- Synonyms and equivalent expressions
-- Minor spelling variations
-- Different but equivalent forms (e.g., "Paris" vs "paris", "42" vs "forty-two")
-
-Return ONLY a JSON object in this format:
-{
-  "isCorrect": true/false,
-  "confidence": 0.0-1.0,
-  "explanation": "Brief explanation of why the answer is correct/incorrect"
-}`;
-
-    const response = await callRekaTextAPI(prompt);
-    
-    // Parse the JSON response
-    let jsonText = response.trim();
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/```\n?/g, '');
+    // Handle NO_ANSWER case
+    if (normalizedStudent === 'NO_ANSWER' || normalizedStudent === '') {
+      return {
+        isCorrect: false,
+        confidence: 1.0,
+        explanation: 'No answer provided by student',
+      };
     }
     
-    const result = JSON.parse(jsonText);
+    // MCQ: Simple exact match (case-insensitive)
+    if (isMCQAnswer(normalizedCorrect)) {
+      const studentUpper = normalizedStudent.toUpperCase();
+      const correctUpper = normalizedCorrect.toUpperCase();
+      const variantsUpper = acceptedVariants.map(v => v.toUpperCase().trim());
+      
+      const isCorrect = studentUpper === correctUpper || variantsUpper.includes(studentUpper);
+      
+      return {
+        isCorrect,
+        confidence: 1.0,
+        explanation: isCorrect 
+          ? `Correct MCQ answer: ${correctUpper}` 
+          : `Incorrect. Expected: ${correctUpper}, Got: ${studentUpper}`,
+      };
+    }
+    
+    // Short answer/Essay: Use vector similarity
+    // Check exact match first
+    const allAcceptedAnswers = [normalizedCorrect, ...acceptedVariants.map(v => v.trim())];
+    const exactMatch = allAcceptedAnswers.some(accepted => 
+      normalizedStudent.toLowerCase() === accepted.toLowerCase()
+    );
+    
+    if (exactMatch) {
+      return {
+        isCorrect: true,
+        confidence: 1.0,
+        explanation: 'Exact match with correct answer',
+      };
+    }
+    
+    // Calculate similarity with correct answer and variants
+    let maxSimilarity = 0;
+    let bestMatch = normalizedCorrect;
+    
+    for (const accepted of allAcceptedAnswers) {
+      const similarity = calculateSimilarity(normalizedStudent, accepted);
+      if (similarity > maxSimilarity) {
+        maxSimilarity = similarity;
+        bestMatch = accepted;
+      }
+    }
+    
+    // Threshold for considering an answer correct (80% similarity)
+    const isCorrect = maxSimilarity >= 0.8;
     
     return {
-      isCorrect: result.isCorrect,
-      confidence: result.confidence || 0.95,
-      explanation: result.explanation || '',
+      isCorrect,
+      confidence: maxSimilarity,
+      explanation: isCorrect 
+        ? `Answer is ${Math.round(maxSimilarity * 100)}% similar to "${bestMatch}"` 
+        : `Answer similarity: ${Math.round(maxSimilarity * 100)}%. Expected: "${bestMatch}"`,
     };
   } catch (error) {
     console.error('Error grading answer:', error);
