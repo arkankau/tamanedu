@@ -5,14 +5,15 @@ An AI-powered auto-grading tool for teachers to scan/upload student worksheets o
 ## 🎯 Features
 
 - **🤖 AI Vision Processing**: Upload worksheet photos (JPG/PNG) and extract student answers using advanced LLM vision
+- **🎓 AI-Generated Rubrics**: Automatically generate data-driven essay rubrics from student work (Gradescope-style)
 - **💡 Intelligent Grading**: Smart answer matching with semantic understanding (synonyms, variations, context)
 - **📝 Answer Key Management**: Upload CSV answer keys with support for multiple accepted variants
 - **🎯 High Accuracy**: Better than traditional OCR - understands handwriting and context
 - **⚠️ Confidence Flagging**: Flag low-confidence answers for manual review
 - **✏️ Inline Editing**: Edit student answers directly in the results table and re-grade automatically
-- **📊 Export Options**: Export results as CSV (individual/summary) or PDF reports
+- **📊 Export Options**: Export results as CSV (individual/summary) or PDF reports + rubric JSON
 - **📱 Mobile-Friendly**: Responsive design that works on tablets and phones
-- **🔒 Secure**: Row-level security with MySQL authentication
+- **🔒 Secure**: Row-level security with ChromaDB authentication
 
 ## 🚀 Quick Start
 
@@ -75,8 +76,11 @@ See [LLM_GRADING.md](./LLM_GRADING.md) for detailed documentation.
 
 ### Grading Workflow
 
-#### Step 1: Create Session & Upload Answer Key
+#### For MCQ / Short Answer Questions:
+
+**Step 1: Create Session & Upload Answer Key**
 - Enter session title and description
+- Select "MCQ" or "Short Answer" as section type
 - Upload CSV answer key with correct answers
 - Format: `question,answer`
 - Support multiple accepted variants using `|` separator
@@ -90,14 +94,33 @@ question,answer
 4,True|T|Yes
 ```
 
-#### Step 2: Upload Student Worksheets
+**Step 2: Upload Student Worksheets**
 - Upload photos (JPG, PNG) of completed worksheets
 - Multiple files supported for batch processing
 - Each file represents one student's work
 
-#### Step 3: AI Answer Extraction
+**Step 3: AI Answer Extraction & Review**
 - Reka AI automatically extracts answers from images
 - Uses vision model to understand handwriting and typed text
+
+#### For Essay Questions (AI-Generated Rubrics):
+
+**Step 1: Create Session**
+- Enter session title and description (include essay prompt for better rubric generation)
+- Select "Essay" as section type
+- No manual rubric creation needed!
+
+**Step 2: Upload Student Essays**
+- Upload photos/PDFs of student essays
+- AI will analyze all submissions
+
+**Step 3: AI Rubric Generation & Review**
+- 🤖 **Automatic Rubric Creation**: Reka AI analyzes all essays and generates a data-driven rubric
+- **Criteria Discovery**: Identifies 3-5 key evaluation criteria based on actual student work
+- **Quality Tiers**: Creates scoring anchors from real student responses
+- **Fair Weighting**: Assigns weights based on performance distribution
+- **Review & Edit**: Download, review, and optionally edit the rubric before grading
+- **Download**: Export rubric as JSON for future use or documentation
 - Provides confidence scores for each answer
 - Low-confidence answers are flagged for review
 
